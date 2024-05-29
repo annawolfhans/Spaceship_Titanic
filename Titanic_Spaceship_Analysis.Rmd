@@ -1,0 +1,62 @@
+---
+title: "SpaceshipTitanic_Analysis"
+author: "Anna Wolford"
+date: "2024-05-29"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(vroom)
+library(rpart)
+library(stacks)
+library(embed)
+library(ranger)
+library(discrim)
+library(naivebayes)
+library(kernlab)
+library(themis)
+
+spaceTrain <- vroom("./train.csv")
+spaceTest <- vroom("./test.csv")
+
+spaceTrain <- spaceTrain %>%
+  mutate(VIP = as.factor(VIP), CryoSleep = as.factor(CryoSleep), Transported =                                                                                     as.factor(Transported), 
+         Destination=as.factor(Destination)) %>%
+  separate(Cabin, into =c("CabinDeck", "CabinRmNumber", "CabinSide"), sep="/") %>% ## split Cabin based off of backslash
+  select(-Name)
+
+view(spaceTrain)
+
+## COME BACK TO THIS IDEA: potentially the $ spent NAs, fill in with a zero...? 
+
+## ADDRESS NA
+sapply(spaceTrain, function(x) sum(is.na(x)))
+## HomePlanet - most pop
+## CryoSleep - same thing 
+```
+
+```{r}
+#c(HomePlanet, CryoSleep, CabinDeck, CabinRmNumber, CabinSide, Destination, Age, VIP, RoomService,
+#  FoodCourt, ShoppingMall, Spa, VRDeck, Transported)
+my_recipe <- recipe(Transported~., data=spaceTrain) %>%
+  update_role(PassengerId, new_role = "ID") %>%
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(Transported)) %>%
+  step_mutate(totalSpent = RoomService+FoodCourt+ShoppingMall+Spa+VRDeck)
+
+prepped_rec <- prep(my_recipe)
+bake(prepped_rec, spaceTrain)
+
+
+# my_recipe <- recipe(Transported~., data=spaceTrain) %>%
+#   step_mutate_at(all_numeric_predictors(), fn=factor) %>%
+#   #step_dummy(all_nominal_predictors()) %>%
+#   #step_other(all_nominal_predictors(), threshold=0.001) %>%
+#   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+#   step_normalize(all_predictors()) %>%
+# # step_pca(all_predictors(), threshold = 0.9) %>%
+# # step_smote(all_outcomes(), neighbors=5)
+```
+
+
