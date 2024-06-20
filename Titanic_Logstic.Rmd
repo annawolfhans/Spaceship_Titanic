@@ -1,7 +1,7 @@
 ---
-title: "SpaceshipTitanic_Analysis"
+title: "TItanic_Logistic"
 author: "Anna Wolford"
-date: "2024-05-29"
+date: "2024-06-19"
 output: html_document
 ---
 
@@ -33,19 +33,20 @@ spaceTest <- spaceTest%>%
   separate(Cabin, into =c("CabinDeck", "CabinRmNumber", "CabinSide"), sep="/") %>% ## split Cabin based off of backslash
   select(-Name)
 
-view(spaceTrain)
+# view(spaceTrain)
 
 ## COME BACK TO THIS IDEA: potentially the $ spent NAs, fill in with a zero...? 
 
 ## ADDRESS NA
-sapply(spaceTrain, function(x) sum(is.na(x)))
+# sapply(spaceTrain, function(x) sum(is.na(x)))
 ## HomePlanet - most pop
-## CryoSleep - same thing 
+
 ```
 
 ```{r}
-#c(HomePlanet, CryoSleep, CabinDeck, CabinRmNumber, CabinSide, Destination, Age, VIP, RoomService,
-#  FoodCourt, ShoppingMall, Spa, VRDeck, Transported)
+my_mod <- logistic_reg() %>%
+  set_engine("glm")
+
 my_recipe <- recipe(Transported~., data=spaceTrain) %>%
   update_role(PassengerId, new_role = "ID") %>%
   step_lencode_mixed(all_nominal_predictors(), outcome = vars(Transported)) %>%
@@ -56,56 +57,15 @@ my_recipe <- recipe(Transported~., data=spaceTrain) %>%
 prepped_rec <- prep(my_recipe)
 baked_rec <- bake(prepped_rec, spaceTrain)
 
-
-
-# my_recipe <- recipe(Transported~., data=spaceTrain) %>%
-#   step_mutate_at(all_numeric_predictors(), fn=factor) %>%
-#   #step_dummy(all_nominal_predictors()) %>%
-#   #step_other(all_nominal_predictors(), threshold=0.001) %>%
-#   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-#   step_normalize(all_predictors()) %>%
-# # step_pca(all_predictors(), threshold = 0.9) %>%
-# # step_smote(all_outcomes(), neighbors=5)
 ```
 
-
 ```{r}
-my_mod <- rand_forest(mtry=tune(),
-                      min_n=tune(),
-                      trees=200) %>%
-  set_engine("ranger") %>%
-  set_mode("classification")
-
-
 space_workflow <- workflow() %>%
   add_recipe(my_recipe) %>%
   add_model(my_mod) %>%
   fit(data=spaceTrain)
 
-tuning_grid <- grid_regular(mtry(c(1,ncol(baked_rec))),
-                            min_n(),
-                            levels=5)
 
-folds <- vfold_cv(spaceTrain, v=5, repeats=1)
-
-CV_results <- space_workflow %>%
-  tune_grid(resamples=folds,
-            grid=tuning_grid,
-            metrics=metric_set(accuracy))
-```
-
-
-```{r}
-bestTune <- CV_results %>%
-  select_best("accuracy")
-
-final_wf <- space_workflow %>%
-  finalize_workflow(bestTune) 
-  # %>% fit(data=spaceTrain)
-
-# # final_wf %>%
-# #   predict(new_data=amazonTest, type="prob")
-#
 space_predictions <- predict(space_workflow,
                               new_data=spaceTest,
                               type="class") %>%
@@ -114,8 +74,46 @@ space_predictions <- predict(space_workflow,
   rename(Transported=.pred_class) %>%
   mutate(Transported = ifelse(Transported == TRUE, "True", "False"))
 
-vroom_write(x=space_predictions, file="./SPACE_RF.csv", delim=",")
+vroom_write(x=space_predictions, file="./SPACE_log.csv", delim=",")
+
 
 ```
 
+## Penalized Logistic Regression
+
+```{r}
+my_mod <- logistic_reg(mixture=.5, penalty=10) %>%
+  set_engine("glmnet")
+
+my_recipe <- recipe(Transported~., data=spaceTrain) %>%
+  update_role(PassengerId, new_role = "ID") %>%
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(Transported)) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  ## step_impute_knn(all_numeric_predictors()) %>%
+  step_mutate(totalSpent = RoomService+FoodCourt+ShoppingMall+Spa+VRDeck)
+
+prepped_rec <- prep(my_recipe)
+baked_rec <- bake(prepped_rec, spaceTrain)
+
+```
+
+```{r}
+space_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(my_mod) %>%
+  fit(data=spaceTrain)
+
+
+space_predictions <- predict(space_workflow,
+                              new_data=spaceTest,
+                              type="class") %>%
+  bind_cols(., spaceTest) %>%
+  select(PassengerId, .pred_class) %>%
+  rename(Transported=.pred_class) %>%
+  mutate(Transported = ifelse(Transported == TRUE, "True", "False"))
+
+vroom_write(x=space_predictions, file="./SPACE_pen_log.csv", delim=",")
+
+
+```
 
