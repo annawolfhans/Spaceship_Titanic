@@ -5,6 +5,7 @@ date: "2024-06-19"
 output: html_document
 ---
 
+## LOG BEFORE EDITS
 ```{r}
 library(tidyverse)
 library(tidymodels)
@@ -65,7 +66,6 @@ space_workflow <- workflow() %>%
   add_model(my_mod) %>%
   fit(data=spaceTrain)
 
-
 space_predictions <- predict(space_workflow,
                               new_data=spaceTest,
                               type="class") %>%
@@ -79,9 +79,37 @@ vroom_write(x=space_predictions, file="./SPACE_log.csv", delim=",")
 
 ```
 
+
 ## Penalized Logistic Regression
 
 ```{r}
+library(tidyverse)
+library(tidymodels)
+library(vroom)
+library(rpart)
+library(stacks)
+library(embed)
+library(ranger)
+library(discrim)
+library(naivebayes)
+library(kernlab)
+library(themis)
+
+spaceTrain <- vroom("./train.csv")
+spaceTest <- vroom("./test.csv")
+
+spaceTrain <- spaceTrain %>%
+  mutate(VIP = as.factor(VIP), CryoSleep = as.factor(CryoSleep), Transported =                                                                                     as.factor(Transported), 
+         Destination=as.factor(Destination)) %>%
+  separate(Cabin, into =c("CabinDeck", "CabinRmNumber", "CabinSide"), sep="/") %>% ## split Cabin based off of backslash
+  select(-Name)
+
+spaceTest <- spaceTest%>%
+  mutate(VIP = as.factor(VIP), CryoSleep = as.factor(CryoSleep), 
+         Destination=as.factor(Destination)) %>%
+  separate(Cabin, into =c("CabinDeck", "CabinRmNumber", "CabinSide"), sep="/") %>% ## split Cabin based off of backslash
+  select(-Name)
+
 my_mod <- logistic_reg(mixture=.5, penalty=10) %>%
   set_engine("glmnet")
 
@@ -112,7 +140,7 @@ space_predictions <- predict(space_workflow,
   rename(Transported=.pred_class) %>%
   mutate(Transported = ifelse(Transported == TRUE, "True", "False"))
 
-vroom_write(x=space_predictions, file="./SPACE_pen_log.csv", delim=",")
+vroom_write(x=space_predictions, file="./SPACE_pen_log_dont_quit.csv", delim=",")
 
 
 ```

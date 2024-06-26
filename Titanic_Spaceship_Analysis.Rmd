@@ -56,8 +56,6 @@ my_recipe <- recipe(Transported~., data=spaceTrain) %>%
 prepped_rec <- prep(my_recipe)
 baked_rec <- bake(prepped_rec, spaceTrain)
 
-
-
 # my_recipe <- recipe(Transported~., data=spaceTrain) %>%
 #   step_mutate_at(all_numeric_predictors(), fn=factor) %>%
 #   #step_dummy(all_nominal_predictors()) %>%
@@ -72,7 +70,7 @@ baked_rec <- bake(prepped_rec, spaceTrain)
 ```{r}
 my_mod <- rand_forest(mtry=tune(),
                       min_n=tune(),
-                      trees=200) %>%
+                      trees=400) %>%
   set_engine("ranger") %>%
   set_mode("classification")
 
@@ -82,7 +80,7 @@ space_workflow <- workflow() %>%
   add_model(my_mod) %>%
   fit(data=spaceTrain)
 
-tuning_grid <- grid_regular(mtry(c(1,ncol(baked_rec))),
+tuning_grid <- grid_regular(mtry(range=c(1,14)),
                             min_n(),
                             levels=5)
 
@@ -104,7 +102,7 @@ final_wf <- space_workflow %>%
   # %>% fit(data=spaceTrain)
 
 # # final_wf %>%
-# #   predict(new_data=amazonTest, type="prob")
+# #   predict(new_data=spaceTest, type="prob")
 #
 space_predictions <- predict(space_workflow,
                               new_data=spaceTest,
@@ -118,4 +116,90 @@ vroom_write(x=space_predictions, file="./SPACE_RF.csv", delim=",")
 
 ```
 
+### PENALIZED LOGISTIC REGRESSION ###
+
+```{r}
+# #########################################
+# ##### PENALIXED LOGISTIC REGRESSION #####
+# #########################################
+
+library(tidyverse)
+library(tidymodels)
+library(vroom)
+library(rpart)
+library(stacks)
+library(embed)
+library(ranger)
+library(discrim)
+library(naivebayes)
+library(kernlab)
+library(themis)
+
+spaceTrain <- vroom("./train.csv")
+spaceTest <- vroom("./test.csv")
+
+spaceTrain <- spaceTrain %>%
+  mutate(ACTION = as.factor(ACTION))
+
+my_mod <- logistic_reg(mixture=tune(), penalty=tune()) %>%
+  set_engine("glmnet")
+#
+# # my_recipe <- recipe(ACTION~., data=spaceTrain) %>%
+# #   step_mutate_at(all_numeric_predictors(), fn=factor) %>%
+# #   step_other(all_nominal_predictors(), threshold=0.001) %>%
+# #   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION))
+# #
+my_recipe <- recipe(ACTION~., data=spaceTrain) %>%
+  step_mutate_at(all_numeric_predictors(), fn=factor) %>%
+  #step_dummy(all_nominal_predictors()) %>%
+  #step_other(all_nominal_predictors(), threshold=0.001) %>%
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_normalize(all_predictors()) %>%
+  # step_pca(all_predictors(), threshold = 0.8) %>%
+  step_smote(all_outcomes(), neighbors=5)
+
+# # prep <- prep(my_recipe)
+# # baked <- bake(prep, new_data=spaceTest)
+#
+space_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(my_mod) %>%
+  fit(data=spaceTrain)
+#
+tuning_grid <- grid_regular(penalty(),
+                            mixture(),
+                            levels=5)
+#
+folds <- vfold_cv(spaceTrain, v=5, repeats=1)
+#
+CV_results <- space_workflow %>%
+  tune_grid(resamples=folds,
+            grid=tuning_grid,
+            metrics=metric_set(roc_auc))
+
+#
+# # do any or call of these
+#   # metric_set(roc_auc, f_meas, sens, recall, spec,
+#     # precision, accuracy)
+#
+bestTune <- CV_results %>%
+  select_best("roc_auc")
+
+final_wf <- space_workflow %>%
+  finalize_workflow(bestTune)
+#
+# final_wf %>%
+#   predict(new_data=spaceTest, type="prob")
+#
+space_predictions <- predict(final_wf,
+                              new_data=spaceTest,
+                              type="class") %>%
+  bind_cols(., spaceTest) %>%
+  select(id, .pred_1) %>%
+  rename(Action=.pred_1)
+
+vroom_write(x=space_predictions, file="./spaceSMOTEPenalizedPreds.csv", delim=",")
+#
+
+```
 
